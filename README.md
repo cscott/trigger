@@ -20,6 +20,11 @@ Installation
 sudo pip install TrebuchetTrigger
 ```
 
+### For local development ###
+```bash
+pip install --user -e .
+```
+
 Configuration
 -------------
 

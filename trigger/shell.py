@@ -133,6 +133,11 @@ class Trigger(object):
                action='store_true',
                default=False,
                help='Force a sync even if nothing changed locally.')
+    @utils.arg('--auto',
+               dest='auto',
+               action='store_true',
+               default=False,
+               help='Automatically retry as needed.')
     def do_sync(self, args):
         """
         Synchronize the current state of the local repository to all

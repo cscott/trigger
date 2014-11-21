@@ -42,6 +42,14 @@ class SyncDriver(drivers.SyncDriver):
             'deploy.checkout-submodules': {
                 'required': False,
                 'default': False
+            },
+            'deploy.sync-retries': {
+                'required': False,
+                'default': 5
+            },
+            'deploy.sync-wait-time': {
+                'required': False,
+                'default': 30
             }
         }
 
@@ -100,18 +108,39 @@ class SyncDriver(drivers.SyncDriver):
         p.communicate()
 
     def _ask(self, stage, args, tag):
-        self._report_driver.report_sync(tag,
-                                        report_type=stage)
+        retries, wait = 0, 0
+        MAX_RETRIES = int(self.conf.config['deploy.sync-retries'])
+        MAX_WAIT = int(self.conf.config['deploy.sync-wait-time'])
+        done = self._report_driver.report_sync(tag, report_type=stage)
         while True:
             answer = raw_input("Continue? ([d]etailed/[C]oncise report,"
-                               "[y]es,[n]o,[r]etry): ")
+                               "[y]es,[n]o,[r]etry,[a]uto): ") \
+                if not args.auto else 'a'
+            if answer == 'a' or answer == 'A':
+                if done:
+                    answer = 'y'
+                else if wait < MAX_WAIT:
+                    wait += 1
+                    os.sleep(1)
+                    answer = 'c'
+                else if retries < MAX_RETRIES:
+                    wait = 0
+                    retries += 1
+                    answer = 'r'
+                else:
+                    # show current status then give up
+                    LOG.info("Continue? auto (n)")
+                    return self._report_driver.report_sync(tag,
+                                                           report_type=stage,
+                                                           detailed=True)
+                LOG.info("Continue? auto ({0})".format(answer))
             if not answer or answer == "c" or answer == "C":
-                self._report_driver.report_sync(tag,
-                                                report_type=stage)
+                done = self._report_driver.report_sync(tag,
+                                                       report_type=stage)
             elif answer == "d" or answer == "D":
-                self._report_driver.report_sync(tag,
-                                                report_type=stage,
-                                                detailed=True)
+                done = self._report_driver.report_sync(tag,
+                                                       report_type=stage,
+                                                       detailed=True)
             elif answer == "Y" or answer == "y":
                 return True
             elif answer == "N" or answer == "n":
@@ -300,10 +329,13 @@ class ReportDriver(drivers.ReportDriver):
         fetch_report = fetch_report.format(fetch_len, min_len)
         checkout_report = "{0}/{1} minions completed checkout"
         checkout_report = checkout_report.format(checkout_len, min_len)
+        retval = False # did all known minions report success?
         if report_type == 'fetch':
             msgs = fetch_report
+            retval = (fetch_len == min_len)
         elif report_type == 'checkout':
             msgs = checkout_report
+            retval = (checkout_len == min_len)
         else:
             msgs = '{0}; {1}'.format(fetch_report, checkout_report)
         LOG.info("")
@@ -343,6 +375,7 @@ class ReportDriver(drivers.ReportDriver):
                     msgs = '\n\t{0}\n\t{1}'.format(fetch_msg, checkout_msg)
                 msgs = "{0}: {1}".format(minion, msgs)
                 LOG.info(msgs)
+        return retval
 
     def _get_fetch_info(self, serv, repo_name, minions, tag):
         ret = {'complete': {}, 'pending': {}}
